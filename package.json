@@ -1,6 +1,6 @@
 {
   "name": "dsh-side-chat",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": false,
   "description": "Side conversation from a transcript selection: a detached, blank Session briefed by a model-written summary of the conversation you are reading.",
   "license": "MIT",
