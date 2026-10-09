@@ -562,7 +562,17 @@ check('docked: the floating panel stands down', findAll(contribution.component(i
 // an <aside> for it. What it must still do is hand the kit a usable body.
 check('docked: the sidebar body seat has a component', typeof bodySeat.component === 'function', typeof bodySeat.component);
 check('docked: that body is the panel this plugin renders', bodySeat.component === plugin.SideChatPanel, String(bodySeat.component === plugin.SideChatPanel));
-check('docked: the body hides the collapse control (the sidebar owns collapsing)', findAll(render(plugin.SideChatPanel, injected), 'button').every((b) => b.props['data-side-chat'] !== 'collapse'), JSON.stringify(findAll(render(plugin.SideChatPanel, injected), 'button').map((b) => b.props['data-side-chat'])));
+// REGRESSION (shipped defect): after docking, the SIDEBAR's own body must draw
+// the conversation. The overlay seat suppresses itself while docked, so the body
+// is the same COMPONENT told which seat it is in — without that distinction the
+// tab opened onto an empty column. This previously rendered the overlay's face,
+// so it could not see the defect.
+const paneBody = render(bodySeat.component, bodySeat.definition.inject());
+check('docked: the sidebar pane body draws the conversation', findAll(paneBody, 'aside').length === 1, JSON.stringify(tags(paneBody)));
+check('docked: the pane body offers the composer', findAll(paneBody, 'textarea').length === 1, JSON.stringify(tags(paneBody)));
+check('docked: the pane body keeps a close control', findAll(paneBody, 'button').some((b) => b.props['data-side-chat'] === 'close'), JSON.stringify(findAll(paneBody, 'button').map((b) => b.props['data-side-chat'])));
+check('docked: the pane body hides the collapse control (the sidebar owns collapsing)', findAll(paneBody, 'button').every((b) => b.props['data-side-chat'] !== 'collapse'), JSON.stringify(findAll(paneBody, 'button').map((b) => b.props['data-side-chat'])));
+check('docked: the floating seat stands down instead', render(bodySeat.component, { ...bodySeat.definition.inject(), floating: true }) === null);
 check('briefing: exactly one summarize call is made', fetchCalls.length === 1, JSON.stringify(fetchCalls.map((c) => c.url)));
 check('briefing: it posts to the host route', fetchCalls[0]?.url === '/side-chat/summarize', String(fetchCalls[0]?.url));
 check('briefing: it sends the visible conversation, not just the selection', String(fetchCalls[0]?.body.text).includes('EARLIER-TURN-1') && String(fetchCalls[0]?.body.text).includes('EARLIER-TURN-2'), String(fetchCalls[0]?.body.text).slice(0, 80));
