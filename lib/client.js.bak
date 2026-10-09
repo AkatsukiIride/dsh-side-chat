@@ -729,18 +729,41 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * The side conversation surface itself: header, transcript, disclosure, and
-     * composer. Rendered by BOTH seats — the shell's own right sidebar tab body
-     * and the floating overlay fallback — so the two can never drift apart.
-     * @param {object} props - the inject face both seats are registered with.
-     * @returns {object} the panel, or nothing while it is closed or docked.
+     * Frame-wide side-chat layer: the selection launcher and the docked panel.
+     * @param {object} props - the inject face this contribution was registered with.
+     * @returns {object} the launcher and panel, or nothing while both are closed.
      */
-    function SideChatPanel(props) {
+    function SideChatLayer(props) {
       var t = resolveCopy()
       var controller = props.sideChat
       var view = useStore(controller.view)
       var rows = useStore(controller.rows)
+      var offerState = useState(null)
+      var offer = offerState[0]
+      var setOffer = offerState[1]
+      var hoverState = useState(false)
+      var hovering = hoverState[0]
+      var setHovering = hoverState[1]
       var rowsRef = useRef(null)
+
+      useEffect(function () {
+        var update = function () { setOffer(readSelection()) }
+        document.addEventListener('mouseup', update)
+        document.addEventListener('keyup', update)
+        document.addEventListener('scroll', update, true)
+        return function () {
+          document.removeEventListener('mouseup', update)
+          document.removeEventListener('keyup', update)
+          document.removeEventListener('scroll', update, true)
+        }
+      }, [])
+
+      useEffect(function () {
+        if (!view.open) return undefined
+        var onKeyDown = function (event) { if (event.key === 'Escape') controller.close() }
+        document.addEventListener('keydown', onKeyDown)
+        return function () { document.removeEventListener('keydown', onKeyDown) }
+      }, [view.open, controller])
 
       useEffect(function () {
         var node = rowsRef.current
@@ -749,6 +772,53 @@ window.__ModuleLoader__.load({
       }, [rows, view.open])
 
       var send = function () { controller.ask(view.draft) }
+
+      var launcher = (!view.open && offer !== null)
+        ? el(
+          'button',
+          {
+            type: 'button',
+            'data-side-chat': 'launcher',
+            style: Object.assign(
+              {},
+              STYLE.launcher,
+              { left: String(offer.x) + 'px', top: String(offer.y) + 'px' },
+              hovering ? STYLE.launcherHover : null,
+            ),
+            // Keep the selection alive: a default mousedown collapses it first.
+            onMouseDown: function (event) { event.preventDefault() },
+            onMouseEnter: function () { setHovering(true) },
+            onMouseLeave: function () { setHovering(false) },
+            onClick: function () {
+              // The conversation is captured here, at the moment the reader asks,
+              // from the turns currently on screen: `source` goes to the host
+              // summarizer, `context` is the fallback used if it returns nothing.
+              controller.open(offer.text, offer.source, offer.context, offer.contextTurns)
+              setOffer(null)
+              setHovering(false)
+            },
+          },
+          t.ask,
+        )
+        : null
+
+      var rowNodes = rows.map(function (row) {
+        if (row.kind === 'tool') {
+          return el(
+            'div',
+            { key: row.key, style: row.status === 'error' ? Object.assign({}, STYLE.tool, STYLE.toolError) : STYLE.tool },
+            el('div', { style: STYLE.toolName }, row.name),
+            row.output === '' ? null : el('pre', { style: STYLE.toolOutput }, row.output),
+          )
+        }
+        if (row.kind === 'user') return el('div', { key: row.key, style: STYLE.user }, row.text)
+        return el(
+          'div',
+          { key: row.key, style: STYLE.assistant },
+          el(AnswerText, { text: row.text }),
+          row.interrupted ? el('div', { style: STYLE.interrupted }, '…') : null,
+        )
+      })
 
       var panelHeader = el(
         'div',
@@ -782,183 +852,96 @@ window.__ModuleLoader__.load({
         ),
       )
 
-      var rowNodes = rows.map(function (row) {
-        if (row.kind === 'tool') {
-          return el(
-            'div',
-            { key: row.key, style: row.status === 'error' ? Object.assign({}, STYLE.tool, STYLE.toolError) : STYLE.tool },
-            el('div', { style: STYLE.toolName }, row.name),
-            row.output === '' ? null : el('pre', { style: STYLE.toolOutput }, row.output),
-          )
-        }
-        if (row.kind === 'user') return el('div', { key: row.key, style: STYLE.user }, row.text)
-        return el(
-          'div',
-          { key: row.key, style: STYLE.assistant },
-          el(AnswerText, { text: row.text }),
-          row.interrupted ? el('div', { style: STYLE.interrupted }, '…') : null,
-        )
-      })
-
-      // A docked tab already owns a real column with real collapse behaviour, so
-      // this body yields to it rather than drawing a second surface.
-      if (!view.open || view.docked) return null
-      var collapsed = view.minimized
-      return el(
-        'aside',
-        {
-          style: collapsed ? Object.assign({}, STYLE.panel, STYLE.panelMinimized) : STYLE.panel,
-          'aria-label': t.title,
-          'data-side-chat': 'panel',
-          'data-collapsed': collapsed ? 'true' : undefined,
-        },
-        panelHeader,
-        collapsed ? null : el(
-          'div',
-          { style: STYLE.rows, ref: rowsRef, role: 'log', 'aria-label': t.title },
-          view.starting ? el('div', { style: STYLE.hint }, t.starting) : null,
-          (!view.starting && rows.length === 0) ? el('div', { style: STYLE.hint }, t.empty) : null,
-          rowNodes,
-        ),
-        (collapsed || view.error === null) ? null : el('div', { style: STYLE.error, role: 'alert' }, t.failed + ': ' + view.error),
-        collapsed ? null : el(
-          'div',
-          { style: STYLE.composer },
-          el('div', { style: STYLE.status, 'data-side-chat': 'status' }, t.status),
-          view.quote === ''
-            ? null
-            : el(
-              'div',
-              { style: STYLE.context, 'data-side-chat': 'context' },
-              t.context + ': ',
-              view.summarizing && view.summary === ''
-                ? t.contextBusy
-                : (view.summary !== ''
-                  ? t.contextSummary
-                  : (view.contextTurns > 0
-                    ? t.contextFallback + ' — ' + String(view.contextTurns) + ' ' + t.contextTurns
-                    : t.contextFallback)),
-            ),
-          view.summaryError === null || view.quote === ''
-            ? null
-            : el(
-              'div',
-              { style: STYLE.contextNote, 'data-side-chat': 'context-note' },
-              t.contextFailed + ' ' + view.summaryError,
-            ),
-          view.quote === ''
-            ? null
-            : el(
-              'div',
-              { style: STYLE.quote },
-              el('span', { style: STYLE.quoteLabel }, t.quoted),
-              el('span', { style: STYLE.quoteText }, view.quote),
-            ),
-          el('textarea', {
-            style: STYLE.input,
-            value: view.draft,
-            placeholder: t.placeholder,
-            'aria-label': t.placeholder,
-            onChange: function (event) { controller.setDraft(event.target.value) },
-            onKeyDown: function (event) {
-              if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
-              event.preventDefault()
-              send()
-            },
-          }),
-          el(
-            'div',
-            { style: STYLE.actions },
-            view.running
-              ? el('button', { type: 'button', style: STYLE.button, onClick: function () { controller.stop() } }, t.stop)
-              : el(
-                'button',
-                {
-                  type: 'button',
-                  style: view.draft.trim() === '' ? Object.assign({}, STYLE.buttonPrimary, STYLE.buttonDisabled) : STYLE.buttonPrimary,
-                  disabled: view.draft.trim() === '',
-                  onClick: send,
-                },
-                t.send,
-              ),
-          ),
-        ),
-      )
-    }
-
-    /**
-     * Frame-wide side-chat layer: the selection launcher, plus the floating panel
-     * when the shell's own right sidebar is not carrying the conversation.
-     * @param {object} props - the inject face this contribution was registered with.
-     * @returns {object} the launcher and, when not docked, the floating panel.
-     */
-    function SideChatLayer(props) {
-      var t = resolveCopy()
-      var controller = props.sideChat
-      var view = useStore(controller.view)
-      var rows = useStore(controller.rows)
-      var offerState = useState(null)
-      var offer = offerState[0]
-      var setOffer = offerState[1]
-      var hoverState = useState(false)
-      var hovering = hoverState[0]
-      var setHovering = hoverState[1]
-
-      useEffect(function () {
-        var update = function () { setOffer(readSelection()) }
-        document.addEventListener('mouseup', update)
-        document.addEventListener('keyup', update)
-        document.addEventListener('scroll', update, true)
-        return function () {
-          document.removeEventListener('mouseup', update)
-          document.removeEventListener('keyup', update)
-          document.removeEventListener('scroll', update, true)
-        }
-      }, [])
-
-      useEffect(function () {
-        if (!view.open) return undefined
-        var onKeyDown = function (event) { if (event.key === 'Escape') controller.close() }
-        document.addEventListener('keydown', onKeyDown)
-        return function () { document.removeEventListener('keydown', onKeyDown) }
-      }, [view.open, controller])
-
-      useEffect(function () {
-        var node = rowsRef.current
-        if (node === null) return
-        node.scrollTop = node.scrollHeight
-      }, [rows, view.open])
-
-      var launcher = (!view.open && offer !== null)
+      // Collapsed keeps the header strip on screen: the conversation survives, so
+      // folding it away is a glance decision rather than a discard.
+      // When the shell's own right sidebar is carrying the tab, the floating
+      // panel stands down: one surface, not two.
+      var panel = view.open && !view.docked
         ? el(
-          'button',
+          'aside',
           {
-            type: 'button',
-            'data-side-chat': 'launcher',
-            style: Object.assign(
-              {},
-              STYLE.launcher,
-              { left: String(offer.x) + 'px', top: String(offer.y) + 'px' },
-              hovering ? STYLE.launcherHover : null,
-            ),
-            // Keep the selection alive: a default mousedown collapses it first.
-            onMouseDown: function (event) { event.preventDefault() },
-            onMouseEnter: function () { setHovering(true) },
-            onMouseLeave: function () { setHovering(false) },
-            onClick: function () {
-              // The conversation is captured here, at the moment the reader asks,
-              // from the turns currently on screen: `source` goes to the host
-              // summarizer, `context` is the fallback used if it returns nothing.
-              controller.open(offer.text, offer.source, offer.context, offer.contextTurns)
-              setOffer(null)
-              setHovering(false)
-            },
+            style: view.minimized ? Object.assign({}, STYLE.panel, STYLE.panelMinimized) : STYLE.panel,
+            'aria-label': t.title,
+            'data-side-chat': 'panel',
+            'data-collapsed': view.minimized ? 'true' : undefined,
           },
-          t.ask,
+          panelHeader,
+          view.minimized ? null : el(
+            'div',
+            { style: STYLE.rows, ref: rowsRef, role: 'log', 'aria-label': t.title },
+            view.starting ? el('div', { style: STYLE.hint }, t.starting) : null,
+            (!view.starting && rows.length === 0) ? el('div', { style: STYLE.hint }, t.empty) : null,
+            rowNodes,
+          ),
+          view.minimized || view.error === null ? null : el('div', { style: STYLE.error, role: 'alert' }, t.failed + ': ' + view.error),
+          view.minimized ? null : el(
+            'div',
+            { style: STYLE.composer },
+            el('div', { style: STYLE.status, 'data-side-chat': 'status' }, t.status),
+            // What the first question will actually carry, so the cost of the
+            // side conversation is visible before it is spent.
+            view.quote === ''
+              ? null
+              : el(
+                'div',
+                { style: STYLE.context, 'data-side-chat': 'context' },
+                t.context + ': ',
+                view.summarizing && view.summary === ''
+                  ? t.contextBusy
+                  : (view.summary !== ''
+                    ? t.contextSummary
+                    : (view.contextTurns > 0
+                      ? t.contextFallback + ' — ' + String(view.contextTurns) + ' ' + t.contextTurns
+                      : t.contextFallback)),
+              ),
+            view.summaryError === null || view.quote === ''
+              ? null
+              : el(
+                'div',
+                { style: STYLE.contextNote, 'data-side-chat': 'context-note' },
+                t.contextFailed + ' ' + view.summaryError,
+              ),
+            view.quote === ''
+              ? null
+              : el(
+                'div',
+                { style: STYLE.quote },
+                el('span', { style: STYLE.quoteLabel }, t.quoted),
+                el('span', { style: STYLE.quoteText }, view.quote),
+              ),
+            el('textarea', {
+              style: STYLE.input,
+              value: view.draft,
+              placeholder: t.placeholder,
+              'aria-label': t.placeholder,
+              onChange: function (event) { controller.setDraft(event.target.value) },
+              onKeyDown: function (event) {
+                if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+                event.preventDefault()
+                send()
+              },
+            }),
+            el(
+              'div',
+              { style: STYLE.actions },
+              view.running
+                ? el('button', { type: 'button', style: STYLE.button, onClick: function () { controller.stop() } }, t.stop)
+                : el(
+                  'button',
+                  {
+                    type: 'button',
+                    style: view.draft.trim() === '' ? Object.assign({}, STYLE.buttonPrimary, STYLE.buttonDisabled) : STYLE.buttonPrimary,
+                    disabled: view.draft.trim() === '',
+                    onClick: send,
+                  },
+                  t.send,
+                ),
+            ),
+          ),
         )
         : null
 
-      return el(React.Fragment, null, launcher, el(SideChatPanel, props))
+      return el(React.Fragment, null, launcher, panel)
     }
 
     // ── plugin body ────────────────────────────────────────────────────────
