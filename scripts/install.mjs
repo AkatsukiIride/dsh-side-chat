@@ -132,12 +132,18 @@ const pnpmArgs = uninstall
   ? [pnpm, 'remove', PACKAGE_NAME]
   : [pnpm, 'add', spec];
 if (!uninstall) {
-  // A changed specifier installs as a NEW dependency entry, so an upgrade has to
-  // drop the recorded one first or the profile depends on two builds at once.
+  // A `file:` dependency is COPIED, not linked, and pnpm keys it by the recorded
+  // specifier — so editing the source alone leaves the profile running the old
+  // build. Drop the entry whenever a `file:` spec is involved, making a re-run a
+  // genuine upgrade; a changed specifier also has to go, or the profile would
+  // depend on two builds at once.
   const before = JSON.parse(readFileSync(manifestPath, 'utf8'));
   const recorded = before.dependencies?.[PACKAGE_NAME];
-  if (typeof recorded === 'string' && recorded !== spec) {
-    console.log(`removing the previously installed spec first: ${recorded}`);
+  const sameFileSpec = typeof recorded === 'string' && recorded === spec && spec.startsWith('file:');
+  if (typeof recorded === 'string' && (recorded !== spec || sameFileSpec)) {
+    console.log(sameFileSpec
+      ? `refreshing the installed copy (a file: dependency is copied, not linked)`
+      : `removing the previously installed spec first: ${recorded}`);
     if (dryRun) console.log(`$ node ${pnpm} remove ${PACKAGE_NAME}`);
     else {
       try {

@@ -170,7 +170,7 @@ check('a valid request answers 200', result.status === 200, String(result.status
 check('a valid request returns the briefing', result.payload.summary === 'BRIEFING: the project is about X and Y.', JSON.stringify(result.payload));
 check('no LLM call happens at registration time', llmCalls.length === 1, String(llmCalls.length));
 check('the call uses the configured default route', llmCalls[0].provider === 'deepseek-official' && llmCalls[0].model === 'deepseek-flash', JSON.stringify({ p: llmCalls[0].provider, m: llmCalls[0].model }));
-check('the output is bounded by maxTokens', llmCalls[0].maxTokens === 400, String(llmCalls[0].maxTokens));
+check('the output is bounded by maxTokens', llmCalls[0].maxTokens === 800, String(llmCalls[0].maxTokens));
 check('the call carries a system instruction', typeof llmCalls[0].system === 'string' && llmCalls[0].system.length > 50);
 check('the call is attributed to this feature', llmCalls[0].purpose === 'side-chat-summary', String(llmCalls[0].purpose));
 check('the call carries the conversation as one user message', llmCalls[0].messages.length === 1 && llmCalls[0].messages[0].content[0].text.includes('hello'), JSON.stringify(llmCalls[0].messages[0].content[0].text));

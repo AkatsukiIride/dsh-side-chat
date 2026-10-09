@@ -300,7 +300,7 @@ const ctx = {
 const source = readFileSync(join(resolve(dirname(fileURLToPath(import.meta.url)), '..'), 'lib', 'client.js'), 'utf8');
 globalThis.require = (specifier) => {
   if (specifier === 'react') return makeReact();
-  throw new Error(`unexpected require("${specifier}") �?the bundle must stay self-contained`);
+  throw new Error(`unexpected require("${specifier}") — the bundle must stay self-contained`);
 };
 new Function('window', 'require', 'document', 'Node', source)(globalThis.window, globalThis.require, globalThis.document, FakeNode);
 
@@ -312,7 +312,7 @@ const plugin = factory(globalThis.require);
 const results = [];
 const check = (name, ok, detail = '') => {
   results.push({ name, ok, detail });
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail === '' ? '' : `  �?${detail}`}`);
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail === '' ? '' : `  — ${detail}`}`);
 };
 
 check('bundle registers under id "dsh-side-chat"', registered.has('dsh-side-chat'));
@@ -389,6 +389,34 @@ check('open: panel never claims the chat is unsaved', !/not saved|不会保存/i
 // The context cost is visible before it is spent.
 const contextNodes = findAll(tree, 'div').filter((d) => d.props['data-side-chat'] === 'context');
 check('open: panel shows what the question will carry', contextNodes.length === 1, JSON.stringify(contextNodes.map((d) => d.props.children)));
+
+// The panel owns its own way out: folding it away must not discard the chat.
+const collapseButton = findAll(tree, 'button').find((b) => b.props['data-side-chat'] === 'collapse');
+const closeButton = findAll(tree, 'button').find((b) => b.props['data-side-chat'] === 'close');
+check('open: panel offers a collapse control', collapseButton !== undefined, JSON.stringify(findAll(tree, 'button').map((b) => b.props['data-side-chat'])));
+check('open: panel offers a close control', closeButton !== undefined);
+check('open: collapse control is labelled for collapsing', collapseButton?.props['aria-label'] === 'Collapse side chat', String(collapseButton?.props['aria-label']));
+
+collapseButton.props.onClick();
+check('collapse: the view records it', controller.view.getSnapshot().minimized === true, String(controller.view.getSnapshot().minimized));
+tree = contribution.component(injected);
+// NOTE: findAll() returns walker REPORT records ({ tag, props }), not live
+// elements, so a report cannot be re-walked. Assert against the root tree.
+const collapsedPanel = findAll(tree, 'aside')[0];
+check('collapse: the panel shrinks to a collapsed strip', collapsedPanel.props['data-collapsed'] === 'true', String(collapsedPanel.props['data-collapsed']));
+check('collapse: the strip is just the header height', collapsedPanel.props.style.height === '42px' && collapsedPanel.props.style.bottom === 'auto', JSON.stringify({ height: collapsedPanel.props.style.height, bottom: collapsedPanel.props.style.bottom }));
+check('collapse: the title stays in the strip', tags(tree).filter((tag) => tag === 'span').length === 1, JSON.stringify(tags(tree)));
+check('collapse: the transcript and composer are hidden', findAll(tree, 'textarea').length === 0);
+check('collapse: the composer status line is gone', findAll(tree, 'div').every((d) => d.props['data-side-chat'] !== 'status'));
+check('collapse: both controls remain reachable', findAll(tree, 'button').length === 2, JSON.stringify(findAll(tree, 'button').map((b) => b.props['data-side-chat'])));
+const expandButton = findAll(tree, 'button').find((b) => b.props['data-side-chat'] === 'collapse');
+check('collapse: the control flips to expand', expandButton.props['aria-label'] === 'Expand side chat', String(expandButton.props['aria-label']));
+check('collapse: the side Session survives', controller.view.getSnapshot().open === true && calls.release === 0, JSON.stringify({ open: controller.view.getSnapshot().open, releases: calls.release }));
+expandButton.props.onClick();
+tree = contribution.component(injected);
+check('expand: the transcript and composer come back', findAll(tree, 'aside')[0].props['data-collapsed'] === undefined && findAll(tree, 'textarea').length === 1);
+// Folding is not re-seeding: no second Session, no second briefing, no prompt.
+check('expand: nothing was re-issued', calls.create.length === 1 && calls.prompt.length === 0 && fetchCalls.length === 1, JSON.stringify({ creates: calls.create.length, prompts: calls.prompt.length, briefings: fetchCalls.length }));
 
 // Prompting: the FIRST send carries context + quote + question in one message.
 controller.setDraft('What else?');
