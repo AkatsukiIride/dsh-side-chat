@@ -221,9 +221,10 @@ Heuristics when reading the table:
 Both halves have an offline harness that drives the real code — no model calls.
 
 ```powershell
-npm test              # both halves: 107 + 33 checks
+npm test              # both halves + token existence
 npm run test:client   #  107 checks: the browser bundle
 npm run test:host     #   33 checks: the route handler
+npm run test:tokens   #   every referenced design token exists
 npm run scan          # the client-modules discovery rules
 ```
 
@@ -238,6 +239,23 @@ path, all seven fallback modes, the excerpt bounds, and the rendered panel.
 redirected to a stub, and drives the real route handler: request validation,
 input truncation (including the tail-keeping rule and the hard ceiling), the
 output bound, the default-route lookup, and every failure mode.
+
+`scripts/check-tokens.mjs` exists because of a real defect: the panel styled
+itself with `--dsh-*` custom properties, which the design system does **not**
+define, so every fallback fired and a light-theme page got a near-black card.
+CSS degrades silently, so this check turns that silence into a failure. It
+compares the bundle's references against the shipped theme, and skips cleanly
+when no extraction is present so `npm test` works without the app installed:
+
+```powershell
+node scripts/extract-asar.mjs "<install>/resources/app.asar" .tmp-asar `
+  "dsh/node_modules/@deepseek-ai/dsh-client-ui-theme/lib/client.js"
+npm run test:tokens
+```
+
+The styles deliberately use `--dsw-alias-*` names read from that theme package:
+they are **theme-scoped** (light on `body`, dark on `body[data-ds-dark-theme]`),
+so the launcher and panel follow the active appearance instead of imposing one.
 
 Two further checks need the shipped app, so they take arguments:
 

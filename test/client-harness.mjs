@@ -300,7 +300,7 @@ const ctx = {
 const source = readFileSync(join(resolve(dirname(fileURLToPath(import.meta.url)), '..'), 'lib', 'client.js'), 'utf8');
 globalThis.require = (specifier) => {
   if (specifier === 'react') return makeReact();
-  throw new Error(`unexpected require("${specifier}") â€” the bundle must stay self-contained`);
+  throw new Error(`unexpected require("${specifier}") â€?the bundle must stay self-contained`);
 };
 new Function('window', 'require', 'document', 'Node', source)(globalThis.window, globalThis.require, globalThis.document, FakeNode);
 
@@ -312,7 +312,7 @@ const plugin = factory(globalThis.require);
 const results = [];
 const check = (name, ok, detail = '') => {
   results.push({ name, ok, detail });
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail === '' ? '' : `  â€” ${detail}`}`);
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail === '' ? '' : `  â€?${detail}`}`);
 };
 
 check('bundle registers under id "dsh-side-chat"', registered.has('dsh-side-chat'));
@@ -446,7 +446,7 @@ tree = contribution.component(injected);
 installSelection('the passage under the cursor', true);
 document.dispatch('mouseup');
 tree = contribution.component(injected);
-const launcher = findAll(tree, 'button').filter((b) => b.props.children === 'Ask about this');
+const launcher = findAll(tree, 'button').filter((b) => b.props.children === 'Ask');
 check('gesture: selecting transcript text offers the launcher', launcher.length === 1, JSON.stringify(findAll(tree, 'button').map((b) => b.props.children)));
 check('gesture: the launcher is anchored to the selection rect', launcher[0].props.style.left === '120px' && launcher[0].props.style.top === '200px', JSON.stringify({ left: launcher[0].props.style.left, top: launcher[0].props.style.top }));
 
@@ -462,7 +462,7 @@ document.dispatch('mouseup');
 tree = contribution.component(injected);
 fetchCalls.length = 0;
 fetchMode = 'summary';
-findAll(tree, 'button').filter((b) => b.props.children === 'Ask about this')[0].props.onClick();
+findAll(tree, 'button').filter((b) => b.props.children === 'Ask')[0].props.onClick();
 await new Promise((r) => setTimeout(r, 0));
 check('briefing: exactly one summarize call is made', fetchCalls.length === 1, JSON.stringify(fetchCalls.map((c) => c.url)));
 check('briefing: it posts to the host route', fetchCalls[0]?.url === '/side-chat/summarize', String(fetchCalls[0]?.url));
@@ -493,7 +493,7 @@ for (const mode of ['empty', 'error', 'no-reason', 'whitespace', 'http-error', '
   tree = contribution.component(injected);
   fetchCalls.length = 0;
   fetchMode = mode;
-  findAll(tree, 'button').filter((b) => b.props.children === 'Ask about this')[0].props.onClick();
+  findAll(tree, 'button').filter((b) => b.props.children === 'Ask')[0].props.onClick();
   await new Promise((r) => setTimeout(r, 0));
   const failed = controller.view.getSnapshot();
   check(`fallback (${mode}): no summary is adopted`, failed.summary === '', JSON.stringify(failed.summary));
@@ -524,7 +524,7 @@ installSelection('the passage under the cursor', true);
 document.dispatch('mouseup');
 tree = contribution.component(injected);
 fetchMode = 'empty';
-findAll(tree, 'button').filter((b) => b.props.children === 'Ask about this')[0].props.onClick();
+findAll(tree, 'button').filter((b) => b.props.children === 'Ask')[0].props.onClick();
 await new Promise((r) => setTimeout(r, 0));
 const bounded = controller.view.getSnapshot();
 check('budget: an oversized preceding turn is dropped whole', bounded.context === '' && bounded.contextTurns === 0, JSON.stringify({ turns: bounded.contextTurns, len: bounded.context.length }));

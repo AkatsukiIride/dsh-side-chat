@@ -1,6 +1,6 @@
 {
   "name": "dsh-side-chat",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": false,
   "description": "Side conversation from a transcript selection: a detached, blank Session briefed by a model-written summary of the conversation you are reading.",
   "license": "MIT",
@@ -43,9 +43,10 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node test/client-harness.mjs && node test/host-harness.mjs",
+    "test": "node test/client-harness.mjs && node test/host-harness.mjs && node scripts/check-tokens.mjs",
     "test:client": "node test/client-harness.mjs",
     "test:host": "node test/host-harness.mjs",
+    "test:tokens": "node scripts/check-tokens.mjs",
     "scan": "node scripts/scan-sim.mjs",
     "install:profile": "node scripts/install.mjs",
     "pack": "npm pack --pack-destination dist"
