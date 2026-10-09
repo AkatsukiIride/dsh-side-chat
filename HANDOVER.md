@@ -32,9 +32,9 @@ profile 是官方更新**不动**的地方。允许改的只有：
 ### 1.3 写文件必须用 UTF-8 忠实的写入器 —— 不要用 PowerShell 的 `Set-Content`
 
 这条是**踩过三次的坑**，不是理论风险。本仓库里有中文和 em dash（`—`）。
-`Set-Content` 会按控制台代码页解码 UTF-8，把 `—` 变成 `鈥?`，**静默损坏文件**。
+`Set-Content` 会按控制台代码页解码 UTF-8，把 em dash **变成乱码**（U+9225 加一个 `?`），**静默损坏文件**。
 正确做法：用 `write` / `edit` 工具，或 Node 的 `fs.writeFileSync(p, text, 'utf8')`。
-校验：`node scripts/../` 见 §5 的编码扫描。
+校验：`node scripts/check-encoding.mjs`（18 个文件应全过；本文件**故意不写**那段乱码字面量，否则检查会把它当成真损坏并误报）。
 
 ### 1.4 浏览器 bundle **没有构建步骤**，但它被 shell 按元数据缓存
 
@@ -274,7 +274,7 @@ node scripts/install.mjs --profile "$env:USERPROFILE\.dsh\profiles\desktop"
 |---|---|
 | 用 `edit` 想"插到函数前面"，结果**把 `SideChatLayer` 的声明整个替换掉了** | 插入时锚点要包含**原有内容**，不要只匹配声明行 |
 | 提取 `rowsRef` 时**只删了 `rowNodes`**，留下引用已删变量的滚动 effect（**会崩**） | 删除声明前先找出所有使用点 |
-| 用 PowerShell `Set-Content` 改文件，**三次**把 `—` 变成 `鈥?` | 见 §1.3，用 Node/工具写 |
+| 用 PowerShell `Set-Content` 改文件，**三次**把 em dash 变成乱码 | 见 §1.3，用 Node/工具写 |
 | 用 `new Function(src)` 校验 **ESM** 文件，必然失败 | ESM 用 `node --check` |
 | 自定义 brace-matcher 从 `)` 后的第一个 `{` 找起，**切错了块** | 括号匹配要处理数组与对象两种形态，或改用文本锚点 |
 | harness 的 `useState` 是空实现 + hook 游标每轮漂移 → **断言在骗自己** | 测试替身必须真的实现状态，否则"全绿"没有意义 |
