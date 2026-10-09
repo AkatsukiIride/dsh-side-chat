@@ -570,8 +570,12 @@ check('docked: that body is the panel this plugin renders', bodySeat.component =
 const paneBody = render(bodySeat.component, bodySeat.definition.inject());
 check('docked: the sidebar pane body draws the conversation', findAll(paneBody, 'aside').length === 1, JSON.stringify(tags(paneBody)));
 check('docked: the pane body offers the composer', findAll(paneBody, 'textarea').length === 1, JSON.stringify(tags(paneBody)));
-check('docked: the pane body keeps a close control', findAll(paneBody, 'button').some((b) => b.props['data-side-chat'] === 'close'), JSON.stringify(findAll(paneBody, 'button').map((b) => b.props['data-side-chat'])));
-check('docked: the pane body hides the collapse control (the sidebar owns collapsing)', findAll(paneBody, 'button').every((b) => b.props['data-side-chat'] !== 'collapse'), JSON.stringify(findAll(paneBody, 'button').map((b) => b.props['data-side-chat'])));
+// The docked body carries NO chrome of its own: the shell's tab strip already
+// shows the title, and the sidebar's own controls collapse/expand/close the
+// column. A header here would be a second title line inside it — which is what a
+// real run showed, and what this asserts against.
+check('docked: the pane body renders no chrome of its own', findAll(paneBody, 'button').every((b) => b.props['data-side-chat'] === undefined) && findAll(paneBody, 'span').length === 2, JSON.stringify({ markedButtons: findAll(paneBody, 'button').filter((b) => b.props['data-side-chat'] !== undefined).map((b) => b.props['data-side-chat']), spans: findAll(paneBody, 'span').length }));
+check('docked: the pane body still draws the transcript and composer', findAll(paneBody, 'aside').length === 1 && findAll(paneBody, 'textarea').length === 1, JSON.stringify(tags(paneBody)));
 check('docked: the floating seat stands down instead', render(bodySeat.component, { ...bodySeat.definition.inject(), floating: true }) === null);
 check('briefing: exactly one summarize call is made', fetchCalls.length === 1, JSON.stringify(fetchCalls.map((c) => c.url)));
 check('briefing: it posts to the host route', fetchCalls[0]?.url === '/side-chat/summarize', String(fetchCalls[0]?.url));
