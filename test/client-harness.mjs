@@ -75,6 +75,20 @@ function findAll(node, tag) {
   return out;
 }
 
+/**
+ * Render a component the way the shell would: through `require('react')`, which
+ * is what resets the hook cursor for a new render. Calling a component directly
+ * would run its hooks against the previous render's cursor.
+ * @param component - the component to render.
+ * @param props - its props.
+ */
+function render(component, props) {
+  // The cursor resets in `useSyncExternalStore`, which every component here calls
+  // first, so this is belt-and-braces for a component that might not.
+  hookCursor = 0;
+  return component(props);
+}
+
 /** Text content of a rendered subtree, host-element text included. */
 function textOf(node) {
   const parts = [];
@@ -291,8 +305,38 @@ const slots = {
 
 const uiSession = { adapter: { current: createStore({ key: 'session-main' }) } };
 
+// ── the shell's own right sidebar ───────────────────────────────────────────
+// The plugin prefers it over the floating fallback, so both the docked path and
+// the "no sidebar mounted" path are exercised here.
+const sidebar = {
+  typeRegistrations: [],
+  closeHandlers: new Map(),
+  openTabCalls: [],
+  /** Set to a message to make openTab fail the way it does with no session. */
+  openTabFailure: null,
+  openTabs: createStore([]),
+  mounted: createStore('session-main'),
+  tabDomain: { occurrence: () => ({ navigation: createStore({ params: undefined }) }) },
+  registerCloseHandler(kind, handler) { this.closeHandlers.set(kind, handler); return () => {}; },
+  openTab(kind, options) {
+    if (this.openTabFailure !== null) throw new Error(this.openTabFailure);
+    this.openTabCalls.push({ kind, options });
+  },
+};
+const sidebarRightTabs = {
+  registrations: [],
+  register(definition) { this.registrations.push(definition); return () => {}; },
+};
+
+/** Toggle the sidebar services off to exercise the fallback seat. */
+let sidebarAvailable = true;
+
 const ctx = {
-  get: (name) => ({ sessions, slots, uiSession })[name],
+  get: (name) => {
+    if (name === 'sidebarRight') return sidebarAvailable ? sidebar : undefined;
+    if (name === 'sidebarRightTabs') return sidebarAvailable ? sidebarRightTabs : undefined;
+    return { sessions, slots, uiSession }[name];
+  },
   effect: (fn) => { const d = fn(); return d; },
 };
 
@@ -322,9 +366,12 @@ check('inject roster is exactly sessions + slots', JSON.stringify(plugin.inject)
 effectQueue = [];
 plugin.apply(ctx);
 check('apply injects into "shell.overlay"', calls.inject.includes('shell.overlay'), JSON.stringify(calls.inject));
-check('apply registers exactly one contribution', calls.register.length === 1);
+// Two seats register when the shell's sidebar is present: the overlay (which
+// carries the launcher) and the sidebar pane-tab body.
+check('apply registers both seats', calls.register.length === 2, JSON.stringify(calls.register.map((entry) => entry.definition.name)));
 
-const contribution = calls.register[0];
+const contribution = calls.register.find((entry) => entry.definition.name === 'shell.overlay');
+check('an overlay contribution is registered', contribution !== undefined, JSON.stringify(calls.register.map((entry) => entry.definition.name)));
 check('contribution is registered for shell.overlay', contribution.definition.name === 'shell.overlay');
 check('contribution id is "side-chat"', contribution.definition.id === 'side-chat');
 check('contribution carries an inject factory', typeof contribution.definition.inject === 'function');
@@ -334,6 +381,20 @@ const injected = contribution.definition.inject();
 check('inject face exposes the controller', typeof injected.sideChat === 'object' && injected.sideChat !== null);
 check('inject face exposes both hooks', typeof injected.hooks.sideChatView === 'object' && typeof injected.hooks.sideChatRows === 'object');
 check('inject face no longer needs the current-session reader', injected.currentSessionId === undefined);
+
+// ── the preferred seat: the shell's own right sidebar ───────────────────────
+check('sidebar: a tab type is registered', sidebarRightTabs.registrations.length === 1, JSON.stringify(sidebarRightTabs.registrations));
+const tabType = sidebarRightTabs.registrations[0];
+check('sidebar: the type id is "side-chat"', tabType?.id === 'side-chat', String(tabType?.id));
+check('sidebar: the kind is "side-chat"', tabType?.kind === 'side-chat', String(tabType?.kind));
+check('sidebar: the band is "extension" (a builtin may take the kind over)', tabType?.priority === 'extension', String(tabType?.priority));
+check('sidebar: the title is resolved lazily', typeof tabType?.title === 'function' && tabType.title() === 'Side chat', String(tabType?.title?.()));
+check('sidebar: a pane-tab body seat is registered', calls.inject.includes('sidebar.right.pane.tab'), JSON.stringify(calls.inject));
+const bodySeat = calls.register.find((entry) => entry.definition.name === 'sidebar.right.pane.tab');
+check('sidebar: the body seat is keyed by the plugin id', bodySeat?.definition.key === 'side-chat', String(bodySeat?.definition.key));
+check('sidebar: the body seat renders the shared panel', bodySeat?.component === plugin.SideChatPanel, typeof bodySeat?.component);
+check('sidebar: closing the tab closes the conversation', sidebar.closeHandlers.has('side-chat'), JSON.stringify([...sidebar.closeHandlers.keys()]));
+check('sidebar: dock is exposed to the launcher', typeof injected.dock === 'function');
 
 // Closed state: no launcher, no panel.
 let tree = contribution.component(injected);
@@ -492,6 +553,16 @@ fetchCalls.length = 0;
 fetchMode = 'summary';
 findAll(tree, 'button').filter((b) => b.props.children === 'Ask')[0].props.onClick();
 await new Promise((r) => setTimeout(r, 0));
+// The shell's sidebar is preferred, so the tab was opened and the floating panel
+// must NOT also render: one surface, not two.
+check('docked: the plugin opened its tab in the shell sidebar', sidebar.openTabCalls.length === 1 && sidebar.openTabCalls[0].kind === 'side-chat', JSON.stringify(sidebar.openTabCalls));
+check('docked: the view records it', controller.view.getSnapshot().docked === true, String(controller.view.getSnapshot().docked));
+check('docked: the floating panel stands down', findAll(contribution.component(injected), 'aside').length === 0);
+// The docked surface is the shell's own dock kit, so the plugin does not render
+// an <aside> for it. What it must still do is hand the kit a usable body.
+check('docked: the sidebar body seat has a component', typeof bodySeat.component === 'function', typeof bodySeat.component);
+check('docked: that body is the panel this plugin renders', bodySeat.component === plugin.SideChatPanel, String(bodySeat.component === plugin.SideChatPanel));
+check('docked: the body hides the collapse control (the sidebar owns collapsing)', findAll(render(plugin.SideChatPanel, injected), 'button').every((b) => b.props['data-side-chat'] !== 'collapse'), JSON.stringify(findAll(render(plugin.SideChatPanel, injected), 'button').map((b) => b.props['data-side-chat'])));
 check('briefing: exactly one summarize call is made', fetchCalls.length === 1, JSON.stringify(fetchCalls.map((c) => c.url)));
 check('briefing: it posts to the host route', fetchCalls[0]?.url === '/side-chat/summarize', String(fetchCalls[0]?.url));
 check('briefing: it sends the visible conversation, not just the selection', String(fetchCalls[0]?.body.text).includes('EARLIER-TURN-1') && String(fetchCalls[0]?.body.text).includes('EARLIER-TURN-2'), String(fetchCalls[0]?.body.text).slice(0, 80));
@@ -510,34 +581,63 @@ check('briefing: the first prompt still quotes the selection', briefedPrompt.inc
 check('briefing: the summary is cleared after use', controller.view.getSnapshot().summary === '', JSON.stringify(controller.view.getSnapshot().summary));
 
 // A failed briefing must fall back to the transcript excerpt, never break.
+//
+// These iterations use a context WITHOUT the shell's sidebar, so the floating
+// seat is the active surface and its disclosure is what gets asserted — which
+// also exercises the graceful degradation path.
+const overlayOnly = {
+  get: (name) => (name === 'sidebarRight' || name === 'sidebarRightTabs' ? undefined : { sessions, slots, uiSession }[name]),
+  effect: (fn) => fn(),
+};
+const overlayRegisters = [];
+const overlaySlots = {
+  inject: (name, factory) => { overlayRegisters.push(name); return factory(); },
+  register: (definition, component) => { calls.register.push({ definition, component }); return () => {}; },
+};
+const overlayCtx = {
+  get: (name) => (name === 'sidebarRight' || name === 'sidebarRightTabs'
+    ? undefined
+    : name === 'slots' ? overlaySlots : { sessions, uiSession }[name]),
+  effect: (fn) => fn(),
+};
+plugin.apply(overlayCtx);
+const overlayContribution = calls.register.filter((entry) => entry.definition.name === 'shell.overlay').pop();
+const overlayFace = overlayContribution.definition.inject();
+// Its own controller and stores: a second `apply` builds a second view store, so
+// assertions below must read through THIS face, not the first context's.
+const overlayController = overlayFace.sideChat;
+check('no sidebar: dock reports that it could not dock', overlayFace.dock() === false, 'dock()');
+check('no sidebar: the original context still owns the only pane-tab seat', calls.register.filter((entry) => entry.definition.name === 'sidebar.right.pane.tab').length === 1, 'degradation must not register a body seat');
+void overlayRegisters;
+
 for (const mode of ['empty', 'error', 'no-reason', 'whitespace', 'http-error', 'reject', 'bad-json']) {
-  controller.close();
+  overlayController.close();
   globalThis.__turns = [
     makeTurn('assistant', 'FALLBACK-TURN-1'),
     makeTurn('assistant', 'SELECTION-TURN the passage under the cursor'),
   ];
   installSelection('the passage under the cursor', true);
   document.dispatch('mouseup');
-  tree = contribution.component(injected);
+  tree = contribution.component(overlayFace);
   fetchCalls.length = 0;
   fetchMode = mode;
   findAll(tree, 'button').filter((b) => b.props.children === 'Ask')[0].props.onClick();
   await new Promise((r) => setTimeout(r, 0));
-  const failed = controller.view.getSnapshot();
+  const failed = overlayController.view.getSnapshot();
   check(`fallback (${mode}): no summary is adopted`, failed.summary === '', JSON.stringify(failed.summary));
   check(`fallback (${mode}): the reason is surfaced`, failed.summaryError !== null, String(failed.summaryError));
   check(`fallback (${mode}): the excerpt is kept for sending`, failed.context.includes('FALLBACK-TURN-1'), JSON.stringify(failed.context));
   check(`fallback (${mode}): summarizing has stopped`, failed.summarizing === false, String(failed.summarizing));
   // The panel must say what it is sending and admit the briefing failed.
-  const fallbackTree = contribution.component(injected);
+  const fallbackTree = contribution.component(overlayFace);
   const noteNodes = findAll(fallbackTree, 'div').filter((d) => d.props['data-side-chat'] === 'context-note');
   check(`fallback (${mode}): the panel discloses the failure`, noteNodes.length === 1, JSON.stringify(noteNodes.length));
   const contextNodes = findAll(fallbackTree, 'div').filter((d) => d.props['data-side-chat'] === 'context');
   check(`fallback (${mode}): the panel names the excerpt as the payload`, /excerpt/i.test(String(contextNodes[0]?.props.children)), JSON.stringify(contextNodes[0]?.props.children));
 }
 // And a fallback question must carry the excerpt rather than nothing.
-controller.setDraft('Fallback question?');
-controller.ask('Fallback question?');
+overlayController.setDraft('Fallback question?');
+overlayController.ask('Fallback question?');
 await new Promise((r) => setTimeout(r, 0));
 const fallbackPrompt = calls.prompt[calls.prompt.length - 1].content[0].text;
 check('fallback: the prompt carries the excerpt', fallbackPrompt.includes('FALLBACK-TURN-1'), JSON.stringify(fallbackPrompt));
@@ -557,6 +657,41 @@ await new Promise((r) => setTimeout(r, 0));
 const bounded = controller.view.getSnapshot();
 check('budget: an oversized preceding turn is dropped whole', bounded.context === '' && bounded.contextTurns === 0, JSON.stringify({ turns: bounded.contextTurns, len: bounded.context.length }));
 controller.close();
+
+// ── the fallback seat: a tree with no right sidebar at all ─────────────────
+// The plugin must degrade to its floating panel instead of losing the feature.
+{
+  controller.close();
+  sidebarAvailable = false;
+  const isolated = [];
+  const isolatedCtx = {
+    get: (name) => (name === 'sidebarRight' || name === 'sidebarRightTabs' ? undefined : { sessions, slots, uiSession }[name]),
+    effect: (fn) => { const d = fn(); isolated.push(d); return d; },
+  };
+  calls.register.length = 0;
+  calls.inject.length = 0;
+  plugin.apply(isolatedCtx);
+  check('no sidebar: no tab type is registered', sidebarRightTabs.registrations.length === 1 && calls.register.every((entry) => entry.definition.name !== 'sidebar.right.pane.tab'), JSON.stringify(calls.register.map((e) => e.definition.name)));
+  const isolatedFace = calls.register.find((entry) => entry.definition.name === 'shell.overlay').definition.inject();
+  check('no sidebar: dock reports that it could not dock', isolatedFace.dock() === false, 'dock()');
+  globalThis.__turns = [
+    makeTurn('assistant', 'FALLBACK-SEAT-TURN'),
+    makeTurn('assistant', 'SELECTION-TURN the passage under the cursor'),
+  ];
+  installSelection('the passage under the cursor', true);
+  isolatedFace.sideChat.open('quoted', 'src', 'EXCERPT', 1);
+  refresh: {
+    // render the layer so its listeners subscribe, then dispatch the gesture
+    contribution.component(isolatedFace);
+    break refresh;
+  }
+  document.dispatch('mouseup');
+  const isolatedTree = contribution.component(isolatedFace);
+  const isolatedLauncher = findAll(isolatedTree, 'button').filter((b) => b.props.children === 'Ask');
+  check('no sidebar: the launcher still appears', isolatedLauncher.length === 1, JSON.stringify(findAll(isolatedTree, 'button').map((b) => b.props.children)));
+  isolatedFace.sideChat.close();
+  sidebarAvailable = true;
+}
 
 const failures = results.filter((r) => !r.ok);
 console.log(`\n${String(results.length - failures.length)}/${String(results.length)} checks passed`);
