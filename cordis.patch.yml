@@ -1,0 +1,22 @@
+# dsh-side-chat — bundle patch layer.
+#
+# Mounts the plugin's HOST half into the DSH application tree. The host half
+# serves ONE route, POST /side-chat/summarize: a browser plugin cannot call
+# `ctx.llm`, so the briefing of the conversation you are reading has to be
+# written host-side. It creates no Session.
+#
+# The same row is what makes the client-modules node half discover this
+# package's `dsh.client` declaration and serve the browser bundle at
+# /plugins/dsh-side-chat/client.js.
+#
+# `inject` waits for the webserver, the LLM runtime, the default model route,
+# and the client module carrier, so the route is never registered into a tree
+# that cannot serve it.
+- insert:
+    - id: dsh-side-chat
+      name: dsh-side-chat
+      inject:
+        - webServer
+        - llm
+        - agentDefaultModel
+        - clientModules

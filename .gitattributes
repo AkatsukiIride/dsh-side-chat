@@ -1,0 +1,7 @@
+# These files are executed by Node (as the plugin runtime, harnesses, and
+# tooling), so line endings are pinned to LF rather than left to core.autocrlf.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.tgz binary

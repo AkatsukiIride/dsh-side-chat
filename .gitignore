@@ -1,0 +1,18 @@
+# dependencies (never committed: the plugin has no runtime dependencies, and
+# the shell provides react to the browser bundle)
+node_modules/
+.pnpm-store/
+
+# build output from `npm run pack`
+dist/
+*.tgz
+
+# scratch space for scripts/extract-asar.mjs
+.tmp-asar/
+
+# editor / OS noise
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+*.log

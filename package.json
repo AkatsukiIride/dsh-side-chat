@@ -1,0 +1,57 @@
+{
+  "name": "dsh-side-chat",
+  "version": "0.2.0",
+  "private": false,
+  "description": "Side conversation from a transcript selection: a detached, blank Session briefed by a model-written summary of the conversation you are reading.",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AkatsukiIride/dsh-side-chat.git"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "side-chat",
+    "throwaway-conversation"
+  ],
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-session-controller"
+      ]
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/client-harness.mjs && node test/host-harness.mjs",
+    "test:client": "node test/client-harness.mjs",
+    "test:host": "node test/host-harness.mjs",
+    "scan": "node scripts/scan-sim.mjs",
+    "install:profile": "node scripts/install.mjs",
+    "pack": "npm pack --pack-destination dist"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-llm": "*"
+  }
+}
